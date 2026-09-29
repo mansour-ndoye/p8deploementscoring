@@ -1,0 +1,41 @@
+# Données
+data/*.csv
+data/*.zip
+data/*.parquet
+
+# Environnements Python
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Modèles
+*.pkl
+*.pickle
+*.joblib
+
+# Variables d'environnement
+.env
+.env.*
+
+# Logs
+*.log
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

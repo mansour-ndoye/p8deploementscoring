@@ -6,13 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   tests:
     name: Automated tests
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: read
 
     steps:
       - name: Checkout code
@@ -35,3 +35,42 @@ jobs:
 
       - name: Run tests
         run: python -m pytest -v
+
+  build-and-deploy:
+    name: Docker build and deployment smoke test
+    runs-on: ubuntu-latest
+    needs: tests
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Build Docker image
+        run: docker build -t pret-a-depenser-api:${{ github.sha }} .
+
+      - name: Start API container
+        run: |
+          docker run -d --name pret-a-depenser-api -p 8001:8000 pret-a-depenser-api:${{ github.sha }}
+
+      - name: Check API health
+        run: |
+          for i in {1..30}; do
+            if curl --fail http://127.0.0.1:8001/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs pret-a-depenser-api
+          exit 1
+
+      - name: Check prediction endpoint
+        run: |
+          curl --fail \
+            -X POST \
+            -H "Content-Type: application/json" \
+            --data-binary @tests/test_payload.json \
+            http://127.0.0.1:8001/predict
+
+      - name: Stop API container
+        if: always()
+        run: docker rm -f pret-a-depenser-api || true

@@ -92,3 +92,53 @@ def test_predict_missing_feature():
 
     assert "missing_features" in data["detail"]
     assert "AMT_INCOME_TOTAL" in data["detail"]["missing_features"]
+def test_predict_invalid_numeric_type():
+    payload = load_payload()
+    payload["AMT_INCOME_TOTAL"] = "texte_invalide"
+
+    response = client.post(
+        "/predict",
+        json=payload
+    )
+
+    assert response.status_code == 422
+
+    data = response.json()
+
+    assert "invalid_features" in data["detail"]
+    assert "AMT_INCOME_TOTAL" in data["detail"]["invalid_features"]
+
+def test_predict_invalid_categorical_type():
+    payload = load_payload()
+    payload["NAME_CONTRACT_TYPE"] = 123
+
+    response = client.post(
+        "/predict",
+        json=payload
+    )
+
+    assert response.status_code == 422
+
+    data = response.json()
+
+    assert "invalid_features" in data["detail"]
+    assert "NAME_CONTRACT_TYPE" in data["detail"]["invalid_features"]
+
+def test_predict_infinite_numeric_value():
+    payload = load_payload()
+    payload["AMT_INCOME_TOTAL"] = float("inf")
+
+    import json
+
+    response = client.post(
+        "/predict",
+        content=json.dumps(payload, allow_nan=True),
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 422
+
+    data = response.json()
+
+    assert "invalid_features" in data["detail"]
+    assert "AMT_INCOME_TOTAL" in data["detail"]["invalid_features"]

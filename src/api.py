@@ -1,8 +1,10 @@
-from pathlib import Path
+﻿from pathlib import Path
 from typing import Any
 from datetime import datetime, timezone
 import csv
 import time
+import math
+from numbers import Real
 
 import joblib
 import pandas as pd
@@ -23,18 +25,18 @@ MONITORING_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ============================================================
-# Chargement du modèle
+# Chargement du modÃ¨le
 # ============================================================
 
 if not MODEL_PATH.exists():
     raise FileNotFoundError(
-        f"Modèle introuvable : {MODEL_PATH}"
+        f"ModÃ¨le introuvable : {MODEL_PATH}"
     )
 
 model = joblib.load(MODEL_PATH)
 
-# Les colonnes attendues sont récupérées directement
-# depuis le pipeline du modèle du Projet 6.
+# Les colonnes attendues sont rÃ©cupÃ©rÃ©es directement
+# depuis le pipeline du modÃ¨le du Projet 6.
 REQUIRED_FEATURES = list(model.feature_names_in_)
 
 
@@ -43,14 +45,14 @@ REQUIRED_FEATURES = list(model.feature_names_in_)
 # ============================================================
 
 app = FastAPI(
-    title="Prêt à Dépenser - Credit Scoring API",
-    description="API de prédiction du risque de défaut de paiement.",
+    title="PrÃªt Ã  DÃ©penser - Credit Scoring API",
+    description="API de prÃ©diction du risque de dÃ©faut de paiement.",
     version="1.0.0",
 )
 
 
 # ============================================================
-# Modèle de requête
+# ModÃ¨le de requÃªte
 # ============================================================
 
 class PredictionRequest(RootModel[dict[str, Any]]):
@@ -64,7 +66,7 @@ class PredictionRequest(RootModel[dict[str, Any]]):
 @app.get("/")
 def root():
     return {
-        "message": "API Credit Scoring - Prêt à Dépenser",
+        "message": "API Credit Scoring - PrÃªt Ã  DÃ©penser",
         "status": "ok",
     }
 
@@ -93,7 +95,7 @@ def predict(request: PredictionRequest):
     payload = request.root
 
     # --------------------------------------------------------
-    # Vérification des variables nécessaires
+    # VÃ©rification des variables nÃ©cessaires
     # --------------------------------------------------------
 
     missing_features = [
@@ -106,24 +108,53 @@ def predict(request: PredictionRequest):
         raise HTTPException(
             status_code=422,
             detail={
-                "message": "Certaines variables nécessaires au modèle sont absentes.",
+                "message": "Certaines variables nÃ©cessaires au modÃ¨le sont absentes.",
                 "missing_features": missing_features,
                 "number_missing": len(missing_features),
             },
         )
 
     # --------------------------------------------------------
-    # Préparation des données
+    # PrÃ©paration des donnÃ©es
     # --------------------------------------------------------
+
+    # Validate input types and numeric values
+    preprocessor = model.named_steps["preprocessor"]
+    numeric_features = preprocessor.transformers_[0][2]
+    categorical_features = preprocessor.transformers_[1][2]
+    invalid_features = []
+
+    for feature in numeric_features:
+        value = payload[feature]
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, Real):
+            invalid_features.append(feature)
+        elif not math.isfinite(float(value)):
+            invalid_features.append(feature)
+
+    for feature in categorical_features:
+        value = payload[feature]
+        if value is not None and not isinstance(value, str):
+            invalid_features.append(feature)
+
+    if invalid_features:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Certaines variables ont un type ou une valeur invalide.",
+                "invalid_features": invalid_features,
+            },
+        )
 
     data = pd.DataFrame([payload])
 
-    # On conserve uniquement les variables utilisées
-    # par le pipeline du modèle.
+    # On conserve uniquement les variables utilisÃ©es
+    # par le pipeline du modÃ¨le.
     data = data[REQUIRED_FEATURES]
 
     # --------------------------------------------------------
-    # Prédiction + mesure du temps d'inférence
+    # PrÃ©diction + mesure du temps d'infÃ©rence
     # --------------------------------------------------------
 
     start_time = time.perf_counter()
@@ -133,7 +164,7 @@ def predict(request: PredictionRequest):
     except Exception as exc:
         raise HTTPException(
             status_code=400,
-            detail=f"Erreur pendant la prédiction : {str(exc)}",
+            detail=f"Erreur pendant la prÃ©diction : {str(exc)}",
         )
 
     inference_time_ms = (time.perf_counter() - start_time) * 1000
@@ -181,7 +212,7 @@ def predict(request: PredictionRequest):
         )
 
     # --------------------------------------------------------
-    # Réponse API
+    # RÃ©ponse API
     # --------------------------------------------------------
 
     return {

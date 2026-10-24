@@ -1,0 +1,11 @@
+﻿monitoring/*.csv
+monitoring/*.json
+monitoring/reports/
+data/
+notebooks/
+.pytest_cache/
+__pycache__/
+*.pyc
+mlflow.db
+.git/
+.github/

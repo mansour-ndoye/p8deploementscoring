@@ -20,6 +20,7 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 MODEL_PATH = BASE_DIR / "model" / "model.pkl"
 MONITORING_DIR = BASE_DIR / "monitoring"
 PREDICTIONS_FILE = MONITORING_DIR / "predictions.csv"
+PRODUCTION_INPUTS_FILE = MONITORING_DIR / "production_inputs.csv"
 
 MONITORING_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -168,6 +169,30 @@ def predict(request: PredictionRequest):
         )
 
     inference_time_ms = (time.perf_counter() - start_time) * 1000
+    # Enregistrement des variables pour l'analyse du data drift.
+    # L'identifiant client est exclu du journal.
+    input_features = [
+        feature for feature in REQUIRED_FEATURES
+        if feature != "SK_ID_CURR"
+    ]
+    input_file_exists = PRODUCTION_INPUTS_FILE.exists()
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    with open(
+        PRODUCTION_INPUTS_FILE,
+        mode="a",
+        newline="",
+        encoding="utf-8",
+    ) as file:
+        writer = csv.writer(file)
+
+        if not input_file_exists:
+            writer.writerow(["timestamp", *input_features])
+
+        writer.writerow([
+            timestamp,
+            *[data.iloc[0][feature] for feature in input_features],
+        ])
 
     # --------------------------------------------------------
     # Identification du client

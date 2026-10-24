@@ -114,14 +114,77 @@ Code source et workflow CI/CD :
 
 https://github.com/mansour-ndoye/p8deploementscoring
 
-10. Limites et améliorations possibles
+10. Monitoring et surveillance du modèle
+
+Stockage des données
+
+L'API enregistre localement les informations nécessaires au suivi des prédictions dans le dossier monitoring/ :
+
+predictions.csv : date de prédiction, identifiant client, score et temps d'inférence.
+
+production_inputs.csv : variables d'entrée utilisées lors des prédictions.
+
+reference_data.csv : échantillon de référence issu des données d'entraînement, utilisé pour comparer la distribution des variables.
+
+Ces fichiers peuvent contenir des données sensibles. Ils sont destinés à un usage local et ne doivent pas être publiés sur le dépôt GitHub. Les fichiers de données et les rapports générés sont exclus du suivi Git et du contexte de construction Docker.
+
+Cette solution constitue une preuve de concept locale. En production réelle, il faudrait prévoir un stockage sécurisé, des contrôles d'accès, une durée de conservation définie et une politique de minimisation des données personnelles.
+
+Préparation des données de référence
+
+Le script monitoring/prepare_reference.py prépare un échantillon de référence de 10 000 lignes à partir du jeu de données d'entraînement.
+
+Par défaut, le script recherche les données dans data/model_dataset_train.csv. Un autre chemin peut être fourni via la variable d'environnement SOURCE_DATA_PATH.
+
+Exemple sous PowerShell :
+
+$env:SOURCE_DATA_PATH = "C:\chemin\vers\model_dataset_train.csv"
+python .\monitoring\prepare_reference.py
+
+Le fichier monitoring/reference_data.csv est généré localement et ne doit pas être partagé publiquement.
+
+Analyse automatisée
+
+Le script monitoring/analyze_monitoring.py produit un rapport de surveillance comprenant :
+
+le volume de prédictions disponibles ;
+
+les valeurs manquantes dans les variables de production ;
+
+des statistiques sur les scores et les temps d'inférence ;
+
+des contrôles opérationnels, notamment sur les scores invalides et les temps d'inférence supérieurs à 1 000 ms ;
+
+une comparaison des distributions entre les données de référence et les données de production.
+
+La détection de dérive utilise le test de Kolmogorov-Smirnov pour les variables numériques et une comparaison de fréquences pour les variables catégorielles.
+
+Pour lancer l'analyse :
+
+python .\monitoring\analyze_monitoring.py
+
+Les résultats sont enregistrés localement sous forme de rapport JSON, de tableau CSV sur les valeurs manquantes et de graphiques dans monitoring/reports/.
+
+Interprétation et limites
+
+Le seuil minimal configuré est de 30 observations de production. En dessous de ce seuil, le rapport indique volume_insuffisant et la dérive n'est pas considérée comme évaluée.
+
+Ce seuil est un choix opérationnel pour la preuve de concept ; il ne garantit pas une puissance statistique suffisante. Les résultats doivent être interprétés en tenant compte du volume, de la qualité des données et de la représentativité de l'échantillon.
+
+Une dérive des variables ne signifie pas nécessairement une baisse de la qualité prédictive. Pour évaluer les performances réelles du modèle, il faut également disposer des résultats observés, par exemple les remboursements effectifs, puis suivre des métriques adaptées.
+
+Les alertes de surveillance doivent être examinées avant toute décision de réentraînement ou de modification du modèle.
+
+Les données et les rapports de surveillance ne doivent pas être considérés comme une preuve de conformité réglementaire ou comme une garantie de performance du modèle.
+
+11. Limites et améliorations possibles
 
 Les évolutions possibles comprennent :
 
 Le déploiement sur une plateforme d'hébergement permanente.
 Le renforcement de la validation des données d'entrée.
 L'amélioration du suivi des performances du modèle.
-La mise en place d'une surveillance de la dérive des données et des prédictions.
-11. Avertissement
+L'amélioration de la surveillance par des alertes automatiques et le suivi des performances à partir des résultats réels.
+12. Avertissement
 
 Ce projet est réalisé dans un contexte pédagogique. Les prédictions ne doivent pas être utilisées seules pour prendre une décision réelle d'octroi de crédit.

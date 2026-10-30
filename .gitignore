@@ -43,7 +43,7 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
-# Données et rapports de monitoring en local
+# Donn es et rapports de monitoring en local
 monitoring/predictions.csv
 monitoring/production_inputs.csv
 monitoring/monitoring_report.json
@@ -52,5 +52,9 @@ monitoring/reports/
 
 monitoring/reference_data.csv
 
-# Fichiers CSV de monitoring : données locales uniquement
+# Fichiers CSV de monitoring : donn es locales uniquement
 monitoring/*.csv
+
+# Journaux HTTP et fichiers de sauvegarde locaux
+monitoring/*.jsonl
+*.bak

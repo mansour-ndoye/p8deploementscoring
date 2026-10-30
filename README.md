@@ -165,6 +165,28 @@ python .\monitoring\analyze_monitoring.py
 
 Les résultats sont enregistrés localement sous forme de rapport JSON, de tableau CSV sur les valeurs manquantes et de graphiques dans monitoring/reports/.
 
+### Monitoring des requêtes HTTP
+
+L'API enregistre les informations relatives aux requêtes HTTP dans `monitoring/http_requests.jsonl`.
+
+Chaque ligne contient la date et l'heure, la méthode HTTP, le chemin de l'endpoint, le code de statut et la durée de traitement en millisecondes.
+
+Le script `monitoring/analyze_monitoring.py` analyse ces journaux et ajoute au rapport JSON :
+- le nombre total de requêtes ;
+- le nombre de réponses réussies (2xx) ;
+- le nombre d'erreurs client (4xx) et serveur (5xx) ;
+- les taux d'erreur HTTP ;
+- les temps de réponse moyen, médian, P95 et maximum ;
+- le nombre de lignes de journal invalides.
+
+Les erreurs 4xx correspondent généralement à des requêtes invalides ou à des problèmes de validation. Les erreurs 5xx signalent des erreurs côté serveur et nécessitent une investigation.
+
+Les requêtes générées par les tests automatisés peuvent augmenter artificiellement le taux d'erreur 4xx. Les indicateurs doivent donc être interprétés en tenant compte de la nature du trafic analysé.
+
+Pour actualiser les rapports :
+
+```powershell
+python .\monitoring\analyze_monitoring.py
 Interprétation et limites
 
 Le seuil minimal configuré est de 30 observations de production. En dessous de ce seuil, le rapport indique volume_insuffisant et la dérive n'est pas considérée comme évaluée.

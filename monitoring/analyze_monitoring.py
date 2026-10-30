@@ -8,10 +8,18 @@ import numpy as np
 import pandas as pd
 from scipy.stats import ks_2samp
 
+
+# ============================================================
+# Configuration
+# ============================================================
+
 BASE_DIR = Path(__file__).resolve().parent
+
 REFERENCE_PATH = BASE_DIR / "reference_data.csv"
 PREDICTIONS_PATH = BASE_DIR / "predictions.csv"
 PRODUCTION_INPUTS_PATH = BASE_DIR / "production_inputs.csv"
+HTTP_LOG_PATH = BASE_DIR / "http_requests.jsonl"
+
 REPORT_PATH = BASE_DIR / "monitoring_report.json"
 MISSING_PATH = BASE_DIR / "missing_values_report.csv"
 PLOTS_DIR = BASE_DIR / "reports"
@@ -20,6 +28,122 @@ MIN_PREDICTIONS = 30
 DRIFT_P_VALUE_THRESHOLD = 0.05
 DRIFT_FREQUENCY_THRESHOLD = 0.05
 
+
+# ============================================================
+# Analyse du journal HTTP
+# ============================================================
+
+def analyze_http_requests():
+    """Analyse les statuts HTTP et les temps de réponse."""
+
+    if not HTTP_LOG_PATH.exists():
+        return {
+            "status": "indisponible",
+            "message": "Le journal HTTP est absent.",
+            "total_requests": 0,
+        }, ["Journal HTTP introuvable."]
+
+    events = []
+    invalid_lines = 0
+
+    with HTTP_LOG_PATH.open("r", encoding="utf-8") as file:
+        for line in file:
+            if not line.strip():
+                continue
+
+            try:
+                event = json.loads(line)
+
+                status = int(event["status_code"])
+                duration = float(event["duration_ms"])
+
+                if status < 100 or status > 599:
+                    raise ValueError("Code HTTP invalide.")
+
+                if not np.isfinite(duration) or duration < 0:
+                    raise ValueError("Durée invalide.")
+
+                events.append({
+                    "status_code": status,
+                    "duration_ms": duration,
+                })
+
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+                invalid_lines += 1
+
+    warnings = []
+
+    if invalid_lines:
+        warnings.append(
+            f"{invalid_lines} ligne(s) invalide(s) dans le journal HTTP."
+        )
+
+    if not events:
+        return {
+            "status": "indisponible",
+            "message": "Aucune requête HTTP exploitable.",
+            "total_requests": 0,
+            "invalid_log_lines": invalid_lines,
+        }, warnings
+
+    http_data = pd.DataFrame(events)
+
+    total = len(http_data)
+
+    success_count = int(
+        http_data["status_code"].between(200, 299).sum()
+    )
+
+    client_errors = int(
+        http_data["status_code"].between(400, 499).sum()
+    )
+
+    server_errors = int(
+        http_data["status_code"].between(500, 599).sum()
+    )
+
+    durations = http_data["duration_ms"]
+
+    report = {
+        "status": "analyse_effectuee",
+        "total_requests": total,
+        "successful_requests_2xx": success_count,
+        "client_errors_4xx": client_errors,
+        "server_errors_5xx": server_errors,
+        "client_error_rate_pct": round(
+            client_errors / total * 100, 2
+        ),
+        "server_error_rate_pct": round(
+            server_errors / total * 100, 2
+        ),
+        "total_error_rate_pct": round(
+            (client_errors + server_errors) / total * 100, 2
+        ),
+        "response_time_ms": {
+            "mean": round(float(durations.mean()), 3),
+            "median": round(float(durations.median()), 3),
+            "p95": round(float(durations.quantile(0.95)), 3),
+            "max": round(float(durations.max()), 3),
+        },
+        "invalid_log_lines": invalid_lines,
+    }
+
+    if server_errors:
+        warnings.append(
+            f"{server_errors} erreur(s) serveur HTTP 5xx détectée(s)."
+        )
+
+    if durations.quantile(0.95) > 1000:
+        warnings.append(
+            "Le P95 du temps de réponse HTTP dépasse 1000 ms."
+        )
+
+    return report, warnings
+
+
+# ============================================================
+# Analyse du data drift
+# ============================================================
 
 def analyze_data_drift(reference, production_inputs):
     """Compare les distributions de référence et de production."""
@@ -56,6 +180,7 @@ def analyze_data_drift(reference, production_inputs):
             f"Data drift non évalué : {len(production_inputs)} observation(s) "
             f"disponible(s), contre {MIN_PREDICTIONS} minimum."
         )
+
         return {
             "status": "volume_insuffisant",
             "message": (
@@ -77,8 +202,6 @@ def analyze_data_drift(reference, production_inputs):
         ref_numeric = pd.to_numeric(ref_series, errors="coerce")
         prod_numeric = pd.to_numeric(prod_series, errors="coerce")
 
-        # Une variable est considérée numérique si ses valeurs non nulles
-        # sont convertibles en nombres dans les deux jeux de données.
         ref_non_null = ref_series.dropna()
         prod_non_null = prod_series.dropna()
 
@@ -90,8 +213,12 @@ def analyze_data_drift(reference, production_inputs):
         )
 
         if is_numeric:
-            ref_values = ref_numeric.replace([np.inf, -np.inf], np.nan).dropna()
-            prod_values = prod_numeric.replace([np.inf, -np.inf], np.nan).dropna()
+            ref_values = (
+                ref_numeric.replace([np.inf, -np.inf], np.nan).dropna()
+            )
+            prod_values = (
+                prod_numeric.replace([np.inf, -np.inf], np.nan).dropna()
+            )
 
             if len(ref_values) < 2 or len(prod_values) < 2:
                 continue
@@ -105,7 +232,9 @@ def analyze_data_drift(reference, production_inputs):
                 "production_count": int(len(prod_values)),
                 "ks_statistic": float(statistic),
                 "p_value": float(p_value),
-                "drift_detected": bool(p_value < DRIFT_P_VALUE_THRESHOLD),
+                "drift_detected": bool(
+                    p_value < DRIFT_P_VALUE_THRESHOLD
+                ),
             })
 
         else:
@@ -117,6 +246,7 @@ def analyze_data_drift(reference, production_inputs):
 
             ref_freq = ref_values.value_counts(normalize=True)
             prod_freq = prod_values.value_counts(normalize=True)
+
             categories = ref_freq.index.union(prod_freq.index)
 
             max_difference = max(
@@ -158,7 +288,12 @@ def analyze_data_drift(reference, production_inputs):
     }, warnings
 
 
+# ============================================================
+# Analyse principale
+# ============================================================
+
 def main():
+
     if not REFERENCE_PATH.exists():
         raise FileNotFoundError(
             f"Jeu de référence introuvable : {REFERENCE_PATH}"
@@ -173,16 +308,21 @@ def main():
     production = pd.read_csv(PREDICTIONS_PATH)
 
     required = {"score", "inference_time_ms", "timestamp"}
+
     if not required.issubset(production.columns):
         missing_columns = required - set(production.columns)
+
         raise ValueError(
             f"Colonnes manquantes dans le journal : {missing_columns}"
         )
 
     if PRODUCTION_INPUTS_PATH.exists():
         production_inputs = pd.read_csv(PRODUCTION_INPUTS_PATH)
+
         if "timestamp" in production_inputs.columns:
-            production_inputs = production_inputs.drop(columns=["timestamp"])
+            production_inputs = production_inputs.drop(
+                columns=["timestamp"]
+            )
     else:
         production_inputs = None
 
@@ -194,12 +334,22 @@ def main():
         production["inference_time_ms"], errors="coerce"
     ).dropna()
 
+    # --------------------------------------------------------
+    # Valeurs manquantes
+    # --------------------------------------------------------
+
     missing_reference = reference.isna().mean().mul(100)
+
     missing_report = pd.DataFrame({
         "variable": missing_reference.index,
         "reference_missing_pct": missing_reference.values,
     })
+
     missing_report.to_csv(MISSING_PATH, index=False)
+
+    # --------------------------------------------------------
+    # Data drift
+    # --------------------------------------------------------
 
     enough_data = len(production) >= MIN_PREDICTIONS
 
@@ -207,19 +357,32 @@ def main():
         reference, production_inputs
     )
 
+    # --------------------------------------------------------
+    # Analyse HTTP
+    # --------------------------------------------------------
+
+    http_report, http_warnings = analyze_http_requests()
+
+    # --------------------------------------------------------
+    # Rapport général
+    # --------------------------------------------------------
+
     report = {
         "production_rows": int(len(production)),
         "minimum_rows_for_basic_analysis": MIN_PREDICTIONS,
         "enough_data_for_basic_analysis": bool(enough_data),
         "reference_rows": int(len(reference)),
         "reference_features": int(len(reference.columns)),
-        "production_input_features_logged": production_inputs is not None,
+        "production_input_features_logged": (
+            production_inputs is not None
+        ),
         "production_input_rows": (
             int(len(production_inputs))
             if production_inputs is not None
             else 0
         ),
         "data_drift": drift_report,
+        "http_monitoring": http_report,
         "score_summary": {},
         "inference_time_summary_ms": {},
         "operational_checks": {},
@@ -227,6 +390,11 @@ def main():
     }
 
     report["warnings"].extend(drift_warnings)
+    report["warnings"].extend(http_warnings)
+
+    # --------------------------------------------------------
+    # Statistiques des scores
+    # --------------------------------------------------------
 
     if len(scores):
         report["score_summary"] = {
@@ -241,6 +409,10 @@ def main():
             report["warnings"].append(
                 "Des scores sont en dehors de l'intervalle [0, 1]."
             )
+
+    # --------------------------------------------------------
+    # Temps d'inférence du modèle
+    # --------------------------------------------------------
 
     if len(times):
         report["inference_time_summary_ms"] = {
@@ -257,20 +429,26 @@ def main():
             f"volume inférieur au seuil de {MIN_PREDICTIONS}."
         )
 
+    # --------------------------------------------------------
+    # Contrôles opérationnels
+    # --------------------------------------------------------
+
+    numeric_scores = pd.to_numeric(
+        production["score"], errors="coerce"
+    )
+
+    numeric_times = pd.to_numeric(
+        production["inference_time_ms"], errors="coerce"
+    )
+
     invalid_scores = (
-        pd.to_numeric(production["score"], errors="coerce").isna()
-        | ~pd.to_numeric(
-            production["score"], errors="coerce"
-        ).between(0, 1)
+        numeric_scores.isna()
+        | ~numeric_scores.between(0, 1)
     )
 
     invalid_times = (
-        pd.to_numeric(
-            production["inference_time_ms"], errors="coerce"
-        ).isna()
-        | (pd.to_numeric(
-            production["inference_time_ms"], errors="coerce"
-        ) < 0)
+        numeric_times.isna()
+        | (numeric_times < 0)
     )
 
     report["operational_checks"] = {
@@ -278,9 +456,7 @@ def main():
         "invalid_score_rows": int(invalid_scores.sum()),
         "invalid_inference_time_rows": int(invalid_times.sum()),
         "inference_time_over_1000ms_rows": int(
-            (pd.to_numeric(
-                production["inference_time_ms"], errors="coerce"
-            ) > 1000).sum()
+            (numeric_times > 1000).sum()
         ),
     }
 
@@ -288,6 +464,10 @@ def main():
         report["warnings"].append(
             "Certaines prédictions ont un temps d'inférence supérieur à 1000 ms."
         )
+
+    # --------------------------------------------------------
+    # Graphiques
+    # --------------------------------------------------------
 
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -298,37 +478,95 @@ def main():
         plt.xlabel("Score prédit")
         plt.ylabel("Nombre de prédictions")
         plt.tight_layout()
-        plt.savefig(PLOTS_DIR / "production_scores.png", dpi=120)
+        plt.savefig(
+            PLOTS_DIR / "production_scores.png",
+            dpi=120
+        )
         plt.close()
 
     if len(times):
         plt.figure(figsize=(8, 4))
-        plt.plot(np.arange(1, len(times) + 1), times, marker="o")
+        plt.plot(
+            np.arange(1, len(times) + 1),
+            times,
+            marker="o"
+        )
         plt.title("Temps d'inférence par prédiction")
         plt.xlabel("Numéro de prédiction")
         plt.ylabel("Temps (ms)")
         plt.tight_layout()
-        plt.savefig(PLOTS_DIR / "inference_times.png", dpi=120)
+        plt.savefig(
+            PLOTS_DIR / "inference_times.png",
+            dpi=120
+        )
         plt.close()
+
+    # --------------------------------------------------------
+    # Export du rapport JSON
+    # --------------------------------------------------------
 
     REPORT_PATH.write_text(
         json.dumps(report, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
 
+    # --------------------------------------------------------
+    # Résumé console
+    # --------------------------------------------------------
+
     print(f"Rapport JSON : {REPORT_PATH}")
     print(f"Rapport des valeurs manquantes : {MISSING_PATH}")
     print(f"Graphiques : {PLOTS_DIR}")
+
     print(f"Prédictions analysées : {len(production)}")
-    print(f"Volume suffisant (seuil {MIN_PREDICTIONS}) : {enough_data}")
+    print(
+        f"Volume suffisant (seuil {MIN_PREDICTIONS}) : "
+        f"{enough_data}"
+    )
+
     print(f"État du data drift : {drift_report['status']}")
     print(
         "Variables avec drift détecté : "
         f"{drift_report['features_with_drift']}"
     )
 
+    print("\n--- Monitoring HTTP ---")
+
+    print(
+        f"Requêtes totales : "
+        f"{http_report.get('total_requests', 0)}"
+    )
+
+    print(
+        f"Erreurs HTTP 4xx : "
+        f"{http_report.get('client_errors_4xx', 0)}"
+    )
+
+    print(
+        f"Erreurs HTTP 5xx : "
+        f"{http_report.get('server_errors_5xx', 0)}"
+    )
+
+    print(
+        f"Taux d'erreur HTTP : "
+        f"{http_report.get('total_error_rate_pct', 0)} %"
+    )
+
+    response_times = http_report.get("response_time_ms", {})
+
+    if response_times:
+        print(
+            f"Temps de réponse moyen : "
+            f"{response_times['mean']} ms"
+        )
+        print(
+            f"Temps de réponse P95 : "
+            f"{response_times['p95']} ms"
+        )
+
     if report["warnings"]:
-        print("Alertes :")
+        print("\nAlertes :")
+
         for warning in report["warnings"]:
             print(f"- {warning}")
 

@@ -45,6 +45,9 @@ model = joblib.load(MODEL_PATH)
 # depuis le pipeline du modèle du Projet 6.
 REQUIRED_FEATURES = list(model.feature_names_in_)
 
+# Composants du pipeline utilisés directement pour l'inférence
+preprocessor = model.named_steps["preprocessor"]
+classifier = model.named_steps["classifier"]
 
 # ============================================================
 # Application FastAPI
@@ -205,7 +208,8 @@ def predict(request: PredictionRequest):
     start_time = time.perf_counter()
 
     try:
-        probability = float(model.predict_proba(data)[0, 1])
+        transformed_data = preprocessor.transform(data)
+        probability = float(classifier.predict_proba(transformed_data)[0, 1])
 
     except Exception as exc:
         raise HTTPException(

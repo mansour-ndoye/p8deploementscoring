@@ -58,3 +58,6 @@ monitoring/*.csv
 # Journaux HTTP et fichiers de sauvegarde locaux
 monitoring/*.jsonl
 *.bak
+
+# Résultats locaux du profilage
+monitoring/profile_results.txt

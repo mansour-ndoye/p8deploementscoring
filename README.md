@@ -210,3 +210,59 @@ L'amélioration de la surveillance par des alertes automatiques et le suivi des 
 12. Avertissement
 
 Ce projet est réalisé dans un contexte pédagogique. Les prédictions ne doivent pas être utilisées seules pour prendre une décision réelle d'octroi de crédit.
+
+Une exécution du script monitoring/analyze_monitoring.py a permis d'obtenir les résultats suivants sur les données locales disponibles.
+
+Surveillance des requêtes HTTP
+
+Nombre total de requêtes analysées : 77.
+
+Réponses réussies (2xx) : 38.
+
+Erreurs client (4xx) : 39, soit 50,65 % des requêtes.
+
+Erreurs serveur (5xx) : 0.
+
+Temps de réponse moyen : 15,791 ms.
+
+Temps de réponse au 95e percentile (P95) : 99,307 ms.
+
+Le taux d'erreurs 4xx doit être interprété avec prudence : certaines réponses correspondent aux tests volontaires de validation des entrées de l'API. Il ne traduit donc pas nécessairement un dysfonctionnement du service. L'absence d'erreurs 5xx sur cet échantillon est un indicateur favorable, mais ne garantit pas l'absence de problèmes en production.
+
+Surveillance des prédictions et du temps d'inférence
+
+Nombre de prédictions analysées : 19.
+
+Score moyen : 0,9030.
+
+Temps d'inférence moyen : 55,82 ms.
+
+Temps d'inférence médian : 43,67 ms.
+
+Temps d'inférence au P95 : 112,46 ms.
+
+Les scores identiques observés sur cet échantillon ne permettent pas de conclure à une stabilité générale des prédictions : les observations disponibles peuvent notamment correspondre à des appels répétés avec un même jeu d'entrée.
+
+Analyse du data drift
+
+Le fichier de référence contient 10 000 observations. Les données de production disponibles comportent 10 observations et 303 variables comparables.
+
+Le seuil minimal configuré étant de 30 observations, l'analyse statistique du drift n'a pas été exécutée. Le rapport indique donc volume_insuffisant.
+
+Ce résultat ne signifie pas qu'aucune dérive n'existe. Il signifie que le volume disponible ne permet pas encore de l'évaluer avec la méthode configurée.
+
+Actions de vigilance recommandées
+
+Accumuler davantage d'observations avant de tirer des conclusions sur le drift.
+
+Surveiller régulièrement les erreurs HTTP 5xx et les temps de réponse P95.
+
+Distinguer les erreurs 4xx attendues lors des validations des erreurs révélant un problème opérationnel.
+
+Vérifier la diversité des données d'entrée et l'évolution des scores.
+
+Contrôler les performances prédictives lorsque les résultats réels des clients deviennent disponibles.
+
+Protéger les données collectées en limitant leur accès et leur durée de conservation.
+
+Ces résultats constituent une photographie de la preuve de concept locale. Ils ne permettent pas, à eux seuls, de garantir les performances futures du modèle ni de conclure à l'absence de dérive.

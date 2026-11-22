@@ -404,3 +404,143 @@ Enfin, la version optimisée a été intégrée à l'API, testée dans Docker et
 
 Cette optimisation constitue une première amélioration technique du processus d'inférence. Des tests complémentaires sur un volume plus important de données et dans des conditions proches de la production restent nécessaires pour confirmer durablement les gains de performance et vérifier l'absence de régression globale du modèle.
 
+
+
+8\. Identification des goulots d'étranglement par profiling
+
+
+
+Le profiling réalisé avec cProfile sur 100 appels de prédiction a permis d'identifier les principales opérations coûteuses du pipeline.
+
+
+
+Le temps cumulé relevé pour les principales fonctions est le suivant :
+
+
+
+Fonction
+
+
+
+Temps cumulé
+
+
+
+ColumnTransformer.transform
+
+
+
+1,799 s
+
+
+
+\_call\_func\_on\_transformers
+
+
+
+1,707 s
+
+
+
+check\_array
+
+
+
+0,999 s
+
+
+
+StandardScaler.transform
+
+
+
+0,980 s
+
+
+
+OneHotEncoder.transform
+
+
+
+0,382 s
+
+
+
+Ces résultats montrent que le prétraitement des données représente une part importante du coût d'inférence.
+
+
+
+Les principales opérations concernées sont :
+
+
+
+la transformation des variables numériques ;
+
+
+
+la transformation des variables catégorielles ;
+
+
+
+les contrôles de validation des tableaux effectués par scikit-learn ;
+
+
+
+l'exécution des transformations au sein du ColumnTransformer.
+
+
+
+Le prétraitement constitue donc un axe d'optimisation pertinent. La version 1.5 utilise directement les composants preprocessor et classifier du pipeline, ce qui permet de simplifier le chemin d'appel de l'inférence.
+
+
+
+Cette modification ne change ni les paramètres appris, ni les poids du modèle, ni les étapes de prétraitement. Elle conserve le même résultat de prédiction sur le payload de test.
+
+
+
+9\. Justification de la configuration technique finale
+
+
+
+La configuration finale conserve les bibliothèques et l'environnement compatibles avec le modèle entraîné.
+
+
+
+Python 3.13 : environnement d'exécution de l'API.
+
+
+
+scikit-learn 1.7.2 : gestion du pipeline de prétraitement et des transformations.
+
+
+
+LightGBM 4.7.0 : classification et calcul des probabilités.
+
+
+
+FastAPI : exposition du modèle via une API REST.
+
+
+
+Uvicorn : serveur d'exécution de l'API.
+
+
+
+Docker : isolation et reproductibilité de l'environnement.
+
+
+
+psutil et cProfile : observation des ressources et profilage.
+
+
+
+Le classifieur LightGBM conserve le paramètre n\_jobs=1. L'exécution est réalisée sur CPU dans l'environnement Docker basé sur python:3.13-slim. Aucun GPU n'est requis pour cette preuve de concept.
+
+
+
+Le recours à ONNX Runtime et à la quantification n'a pas été retenu, car la priorité a été donnée à une optimisation du chemin d'inférence existant, sans introduire de conversion supplémentaire susceptible de modifier le comportement du pipeline ou de créer des problèmes de compatibilité.
+
+
+
+Cette configuration privilégie donc la simplicité, la reproductibilité et la compatibilité avec l'environnement de déploiement validé par les tests automatisés et le workflow CI/CD.
+
